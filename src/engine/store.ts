@@ -1,4 +1,4 @@
-import { PointRing } from "../lib/ringBuffer.ts";
+import { FLAG_SIM, PointRing } from "../lib/ringBuffer.ts";
 import {
   POINT_STRIDE,
   type BatchMessage,
@@ -20,6 +20,13 @@ const DEPTH_HISTORY_INTERVAL_MS = 1000;
 export class MarketStore {
   readonly points = new PointRing(POINT_CAPACITY);
   depth: DepthSnapshot | null = null;
+  /**
+   * Where the data switches between real and simulated, as pairs
+   * [time, 1 = simulated from here | 0 = real from here]. Kept at ingest,
+   * so drawing never has to scan every point's flags.
+   */
+  readonly simSwitches: number[] = [];
+  private lastSim = 0;
   /** Depth snapshots by time, oldest first (for replay). */
   readonly depthHistory: DepthSnapshot[] = [];
   status: FeedStatus | null = null;
@@ -42,12 +49,25 @@ export class MarketStore {
       this.resets++;
       this.points.clear();
       this.depthHistory.length = 0;
+      this.simSwitches.length = 0;
+      this.lastSim = 0;
     }
     const p = msg.points;
     const ring = this.points;
     for (let i = 0; i < p.length; i += POINT_STRIDE) {
       ring.push(p[i], p[i + 1], p[i + 2], p[i + 3]);
+      const sim = p[i + 3] & FLAG_SIM ? 1 : 0;
+      if (sim !== this.lastSim) {
+        this.simSwitches.push(p[i], sim);
+        this.lastSim = sim;
+      }
     }
+    // Forget switches older than the buffer, keeping the one that sets the
+    // state of the oldest point.
+    const sw = this.simSwitches;
+    let drop = 0;
+    while (drop + 2 < sw.length && sw[drop + 2] <= ring.firstTime) drop += 2;
+    if (drop > 0) sw.splice(0, drop);
     if (p.length > 0 || msg.reset) this.pointsVersion++;
     if (msg.depth) {
       this.depth = msg.depth;
@@ -67,6 +87,20 @@ export class MarketStore {
     if (last && d.time - last.time < DEPTH_HISTORY_INTERVAL_MS) return;
     h.push(d);
     if (h.length > DEPTH_HISTORY_CAPACITY) h.shift();
+  }
+
+  /** Simulated time ranges overlapping [from, to], as flat [start, end, ...]. */
+  simBands(from: number, to: number): number[] {
+    const sw = this.simSwitches;
+    const out: number[] = [];
+    for (let k = 0; k < sw.length; k += 2) {
+      if (sw[k + 1] !== 1) continue;
+      const start = sw[k];
+      const end = k + 2 < sw.length ? sw[k + 2] : Infinity;
+      if (end <= from || start >= to) continue;
+      out.push(Math.max(start, from), Math.min(end, to));
+    }
+    return out;
   }
 
   /** Newest recorded depth snapshot at or before `time`, or null. */

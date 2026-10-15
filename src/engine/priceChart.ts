@@ -45,6 +45,13 @@ const MAX_SPAN_MS = 24 * 3_600_000;
 /** Smallest price range on the y axis (USD), so a flat market is not blown up. */
 const MIN_Y_SPAN = 1;
 const Y_PAD = 0.08;
+const LINE_W = 1.5;
+
+function growRects(old: Float64Array<ArrayBuffer>): Float64Array<ArrayBuffer> {
+  const next = new Float64Array(Math.max(1024, old.length * 2));
+  next.set(old);
+  return next;
+}
 
 const clampSpan = (ms: number) => Math.min(MAX_SPAN_MS, Math.max(MIN_SPAN_MS, ms));
 
@@ -97,7 +104,9 @@ export class PriceChart implements FrameTask {
   private nLimit = 0;
   private lineEnd = NaN;
   private hasData = false;
-  private readonly bands: number[] = [];
+  private bands: number[] = [];
+  /** Reused rectangle list for the dense drawing path (x, y, w, h). */
+  private rects: Float64Array<ArrayBuffer> = new Float64Array(4096);
   private readonly seriesKey = new Float64Array(9).fill(NaN);
   private readonly gridKey = new Float64Array(7).fill(NaN);
 
@@ -305,26 +314,10 @@ export class PriceChart implements FrameTask {
   private computeSeries(known: number): void {
     const pts = this.store.points;
     const ds = this.ds;
-    const bands = this.bands;
-    bands.length = 0;
     ds.begin(this.xMin, this.xMax, Math.floor(this.plotW), this.i1 - this.i0);
-    let inSim = false;
-    let simStart = 0;
     const T = pts.time;
     const P = pts.price;
-    const F = pts.flags;
-    pts.segments(this.i0, this.i1, (a, b) => {
-      for (let j = a; j < b; j++) {
-        const t = T[j];
-        ds.add(t, P[j]);
-        const sim = (F[j] & FLAG_SIM) !== 0;
-        if (sim !== inSim) {
-          if (sim) simStart = t;
-          else bands.push(simStart, t);
-          inSim = sim;
-        }
-      }
-    });
+    pts.segments(this.i0, this.i1, (start, end) => ds.addRange(T, P, start, end));
     ds.end();
 
     const atNewest = this.i1 > 0 && this.i1 === this.nLimit;
@@ -332,7 +325,8 @@ export class PriceChart implements FrameTask {
     // line: the price stays at the last trade). After that: a gap, which is
     // how a stalled feed looks on screen.
     this.lineEnd = atNewest ? Math.max(known, pts.timeAt(this.i1 - 1)) : NaN;
-    if (inSim) bands.push(simStart, atNewest ? this.lineEnd : pts.timeAt(this.i1 - 1));
+    const dataEnd = this.i1 > 0 ? (atNewest ? this.lineEnd : pts.timeAt(this.i1 - 1)) : this.xMin;
+    this.bands = this.store.simBands(this.xMin, Math.min(this.xMax, dataEnd));
     this.pointsInView = ds.inView;
     this.vertices = ds.count;
 
@@ -445,7 +439,6 @@ export class PriceChart implements FrameTask {
     const ctx = this.seriesLayer.begin();
     const { plotW, plotH } = this;
     const dpr = this.seriesLayer.dpr;
-    const bottom = PAD_TOP + plotH;
 
     if (!this.hasData) {
       ctx.fillStyle = COLORS.axisText;
@@ -485,10 +478,18 @@ export class PriceChart implements FrameTask {
       }
     }
 
-    // Step line through the downsampled vertices.
+    const endX = this.ds.aggregated ? this.drawColumns(ctx) : this.drawStepPath(ctx);
+    ctx.restore();
+
+    if (Number.isFinite(this.lineEnd)) this.drawLastPrice(ctx, endX);
+  }
+
+  /** Sparse view (no more points than pixels): the exact step line. Returns its end x. */
+  private drawStepPath(ctx: CanvasRenderingContext2D): number {
     const { t, p, count } = this.ds;
-    const sx = plotW / (this.xMax - this.xMin);
-    const sy = plotH / (this.yMax - this.yMin);
+    const bottom = PAD_TOP + this.plotH;
+    const sx = this.plotW / (this.xMax - this.xMin);
+    const sy = this.plotH / (this.yMax - this.yMin);
     const x0 = this.xMin;
     const y0 = this.yMax;
     const line = new Path2D();
@@ -515,12 +516,94 @@ export class PriceChart implements FrameTask {
     ctx.fillStyle = COLORS.lineFill;
     ctx.fill(area);
     ctx.strokeStyle = COLORS.line;
-    ctx.lineWidth = 1.5;
-    ctx.lineJoin = "round";
+    ctx.lineWidth = LINE_W;
+    ctx.lineJoin = "miter"; // a step line only has right angles
     ctx.stroke(line);
-    ctx.restore();
+    return lastX;
+  }
 
-    if (Number.isFinite(this.lineEnd)) this.drawLastPrice(ctx, lastX);
+  /**
+   * Dense view (more points than pixels): one bar per pixel column, from the
+   * column's lowest to highest price, including the step in from the
+   * previous price; flat runs between columns are thin horizontal bars.
+   * These are exactly the pixels the step line through the min/max vertices
+   * covers, but drawn as a few hundred plain rectangles instead of stroking
+   * one long self-overlapping path. Measured: stroking that path was the
+   * main frame cost in Chrome (GPU stroker), not the JavaScript.
+   * Returns the end x of the line.
+   */
+  private drawColumns(ctx: CanvasRenderingContext2D): number {
+    const { t, p, count } = this.ds;
+    const bottom = PAD_TOP + this.plotH;
+    const sx = this.plotW / (this.xMax - this.xMin);
+    const sy = this.plotH / (this.yMax - this.yMin);
+    const x0 = this.xMin;
+    const y0 = this.yMax;
+    const yOf = (price: number) => PAD_TOP + (y0 - price) * sy;
+    const half = LINE_W / 2;
+    const rects = this.rects;
+    let n = 0;
+    const push = (x: number, y: number, w: number, h: number) => {
+      if (n + 4 > rects.length) this.rects = growRects(this.rects);
+      const r = this.rects;
+      r[n] = x;
+      r[n + 1] = y;
+      r[n + 2] = w;
+      r[n + 3] = h;
+      n += 4;
+    };
+    const bar = (col: number, lo: number, hi: number) => {
+      const top = yOf(hi);
+      push(col, top - half, LINE_W, yOf(lo) - top + LINE_W);
+    };
+    const flat = (xa: number, xb: number, price: number) => {
+      push(xa, yOf(price) - half, xb - xa + half, LINE_W);
+    };
+
+    // The area under the line: one vertex per column edge, at the price the
+    // line has there. Simple shape, cheap to fill.
+    const area = new Path2D();
+    let col = Math.floor((t[0] - x0) * sx);
+    const firstX = col;
+    let lo = p[0];
+    let hi = p[0];
+    area.moveTo(col, yOf(p[0]));
+    for (let k = 1; k < count; k++) {
+      const c = Math.floor((t[k] - x0) * sx);
+      if (c !== col) {
+        const prev = p[k - 1];
+        bar(col, lo, hi);
+        area.lineTo(col + 1, yOf(prev));
+        if (c > col + 1) flat(col + 1, c, prev);
+        area.lineTo(c, yOf(prev));
+        col = c;
+        lo = hi = prev; // the step at this vertex starts from the previous price
+      }
+      const q = p[k];
+      if (q < lo) lo = q;
+      if (q > hi) hi = q;
+    }
+    bar(col, lo, hi);
+    const last = p[count - 1];
+    let endX = col + 1;
+    area.lineTo(endX, yOf(last));
+    if (Number.isFinite(this.lineEnd)) {
+      const xe = (this.lineEnd - x0) * sx;
+      if (xe > endX) {
+        flat(endX, xe, last);
+        endX = xe;
+        area.lineTo(endX, yOf(last));
+      }
+    }
+    area.lineTo(endX, bottom);
+    area.lineTo(firstX, bottom);
+    area.closePath();
+    ctx.fillStyle = COLORS.lineFill;
+    ctx.fill(area);
+    ctx.fillStyle = COLORS.line;
+    const r = this.rects;
+    for (let i = 0; i < n; i += 4) ctx.fillRect(r[i], r[i + 1], r[i + 2], r[i + 3]);
+    return endX;
   }
 
   /** Last trade price: dashed line plus an axis tag with ▲/▼ (tick direction). */

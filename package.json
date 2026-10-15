@@ -12,7 +12,9 @@
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:watch": "vitest",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "measure": "vite build && node scripts/measure.mjs",
+    "screenshots": "vite build && node scripts/screenshots.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

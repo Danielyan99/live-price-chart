@@ -1,10 +1,18 @@
 import { SIZE_DECIMALS, formatTimeUTC, splitDecimal } from "../lib/format.ts";
 import { FLAG_BUY, FLAG_SIM } from "../lib/ringBuffer.ts";
+import { setText } from "./dom.ts";
 import type { FrameTask } from "./frameLoop.ts";
 import type { ChartClock } from "./priceChart.ts";
 import type { MarketStore } from "./store.ts";
 
 export const TRADE_ROWS = 50;
+/**
+ * The table refreshes at most 10 times a second. Nobody can read rows that
+ * change 60 times a second, and each DOM refresh costs layout and paint
+ * (measured: at 400 trades/s on a 4x slower CPU, refreshing every frame was
+ * the biggest cost after drawing). The chart still shows every trade.
+ */
+const MIN_INTERVAL_MS = 100;
 
 interface Row {
   tr: HTMLTableRowElement;
@@ -15,10 +23,6 @@ interface Row {
   sizeInt: HTMLElement;
   sizeFrac: HTMLElement;
   sizePad: HTMLElement;
-}
-
-function setText(el: HTMLElement, text: string): void {
-  if (el.textContent !== text) el.textContent = text;
 }
 
 function setAttr(el: HTMLElement, name: string, value: string | null): void {
@@ -41,6 +45,7 @@ export class TradesTable implements FrameTask {
   private rows: Row[] = [];
   private lastEnd = NaN;
   private lastResets = -1;
+  private lastDraw = -Infinity;
 
   constructor(store: MarketStore, clock: ChartClock) {
     this.store = store;
@@ -66,8 +71,8 @@ export class TradesTable implements FrameTask {
     this.rows = [];
   }
 
-  frame(): void {
-    if (this.rows.length === 0) return;
+  frame(now: number): void {
+    if (this.rows.length === 0 || now - this.lastDraw < MIN_INTERVAL_MS) return;
     const pts = this.store.points;
     const limit = this.clock.limit();
     const n = Number.isFinite(limit) ? pts.upperBound(limit) : pts.length;
@@ -76,6 +81,7 @@ export class TradesTable implements FrameTask {
     if (end === this.lastEnd && this.store.resets === this.lastResets) return;
     this.lastEnd = end;
     this.lastResets = this.store.resets;
+    this.lastDraw = now;
 
     for (let r = 0; r < this.rows.length; r++) {
       const row = this.rows[r];

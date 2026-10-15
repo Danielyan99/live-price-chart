@@ -38,7 +38,8 @@ export type FeedEvent =
     }
   | { kind: "book-snapshot"; bids: Array<[number, number]>; asks: Array<[number, number]> }
   | { kind: "book-update"; changes: Array<{ bid: boolean; price: number; size: number }> }
-  | { kind: "heartbeat"; time: number }
+  /** Sent every second; `lastTradeId` is the newest trade at that time. */
+  | { kind: "heartbeat"; time: number; lastTradeId: number }
   | { kind: "subscribed"; channels: string[] }
   | { kind: "error"; message: string };
 
@@ -114,7 +115,11 @@ export function parseCoinbaseMessage(raw: string): FeedEvent | null {
       };
     }
     case "heartbeat":
-      return { kind: "heartbeat", time: parseIsoTime(String(m.time)) };
+      return {
+        kind: "heartbeat",
+        time: parseIsoTime(String(m.time)),
+        lastTradeId: Number(m.last_trade_id),
+      };
     case "subscriptions": {
       const channels = Array.isArray(m.channels)
         ? (m.channels as Array<{ name?: unknown }>).map((c) => String(c.name))
@@ -129,6 +134,11 @@ export function parseCoinbaseMessage(raw: string): FeedEvent | null {
     default:
       return null;
   }
+}
+
+/** True when the subscription confirmation includes the trades channel. */
+export function hasTradeChannel(channels: readonly string[]): boolean {
+  return channels.includes("matches");
 }
 
 /** True when the subscription confirmation includes an order-book channel. */

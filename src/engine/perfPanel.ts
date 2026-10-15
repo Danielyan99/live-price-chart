@@ -1,5 +1,6 @@
 import { formatCount, formatFixed, formatMB } from "../lib/format.ts";
 import { COLORS, FONT, Layer, crisp, pattern } from "./canvas.ts";
+import { setText } from "./dom.ts";
 import type { FrameLoop, FrameTask } from "./frameLoop.ts";
 import { FRAME_BUDGET_MS } from "./perfStats.ts";
 import type { PriceChart } from "./priceChart.ts";
@@ -9,6 +10,7 @@ const BARS = 120;
 /** Top of the sparkline scale; the budget line sits at 2/3 height. */
 const SCALE_MS = 25;
 const TEXT_EVERY_MS = 250;
+const SPARK_EVERY_MS = 50;
 
 interface PerfMemory {
   usedJSHeapSize: number;
@@ -32,6 +34,7 @@ export class PerfPanel implements FrameTask {
   private sparkW = 0;
   private sparkH = 0;
   private lastText = 0;
+  private lastSpark = 0;
   private lastSecond = 0;
   private ingestPerSec = 0;
 
@@ -67,7 +70,10 @@ export class PerfPanel implements FrameTask {
 
   frame(now: number): void {
     if (!this.root) return;
-    this.drawSpark();
+    if (now - this.lastSpark >= SPARK_EVERY_MS) {
+      this.lastSpark = now;
+      this.drawSpark();
+    }
     if (now - this.lastSecond >= 1000) {
       this.ingestPerSec = (this.store.ingestMs * 1000) / Math.max(1, now - this.lastSecond);
       this.store.ingestMs = 0;
@@ -81,7 +87,7 @@ export class PerfPanel implements FrameTask {
   private set(key: string, text: string, state?: "ok" | "warn"): void {
     const el = this.fields.get(key);
     if (!el) return;
-    if (el.textContent !== text) el.textContent = text;
+    setText(el, text);
     if (state !== undefined && el.dataset.state !== state) el.dataset.state = state;
   }
 

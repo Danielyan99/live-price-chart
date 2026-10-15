@@ -1,11 +1,14 @@
 import { formatDuration, formatTimeUTC } from "../lib/format.ts";
 import type { PointRing } from "../lib/ringBuffer.ts";
+import { setText } from "./dom.ts";
 import type { FrameTask } from "./frameLoop.ts";
 import { Observable } from "./observable.ts";
 
 export const REPLAY_SPEEDS = [0.5, 1, 4, 16] as const;
 /** A frame gap longer than this (background tab) is not replayed as a jump. */
 const MAX_FRAME_DT_MS = 250;
+/** The scrubber and labels are DOM: refreshed 10 times a second, not every frame. */
+const LABEL_EVERY_MS = 100;
 
 export interface ReplayUi {
   active: boolean;
@@ -31,6 +34,7 @@ export class Replay implements FrameTask {
   private readonly points: PointRing;
   private readonly liveNow: () => number;
   private lastTs = NaN;
+  private lastLabels = -Infinity;
 
   // DOM written every frame while active (no React render per frame).
   private scrubber: HTMLInputElement | null = null;
@@ -174,6 +178,8 @@ export class Replay implements FrameTask {
     this.lastTs = now;
     if (!this.active) return;
     this.advance(dt);
+    if (now - this.lastLabels < LABEL_EVERY_MS) return;
+    this.lastLabels = now;
     const s = this.scrubber;
     if (s && !this.scrubbing) {
       const min = String(this.start);
@@ -184,10 +190,7 @@ export class Replay implements FrameTask {
       if (s.value !== value) s.value = value;
       s.setAttribute("aria-valuetext", `${formatTimeUTC(this.cursor)} UTC`);
     }
-    const time = `${formatTimeUTC(this.cursor)} UTC`;
-    if (this.timeLabel && this.timeLabel.textContent !== time) this.timeLabel.textContent = time;
-    const behind = `${formatDuration(this.liveNow() - this.cursor)} behind live`;
-    if (this.behindLabel && this.behindLabel.textContent !== behind)
-      this.behindLabel.textContent = behind;
+    setText(this.timeLabel, `${formatTimeUTC(this.cursor)} UTC`);
+    setText(this.behindLabel, `${formatDuration(this.liveNow() - this.cursor)} behind live`);
   }
 }

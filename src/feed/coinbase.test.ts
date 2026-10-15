@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { hasBookChannel, parseCoinbaseMessage, parseIsoTime, parseRestTrade } from "./coinbase.ts";
+import {
+  hasBookChannel,
+  hasTradeChannel,
+  parseCoinbaseMessage,
+  parseIsoTime,
+  parseRestTrade,
+} from "./coinbase.ts";
 
 // Frames below are trimmed copies of real messages from the feed.
 describe("parseIsoTime", () => {
@@ -110,8 +116,15 @@ describe("parseCoinbaseMessage", () => {
     ).toMatchObject({ kind: "ticker", price: 82344.77, open24h: 81545.28 });
 
     expect(
-      parseCoinbaseMessage(JSON.stringify({ type: "heartbeat", time: "2026-10-15T16:00:21Z" })),
-    ).toMatchObject({ kind: "heartbeat" });
+      parseCoinbaseMessage(
+        JSON.stringify({
+          type: "heartbeat",
+          last_trade_id: 1106545022,
+          product_id: "BTC-USD",
+          time: "2026-10-15T16:00:21Z",
+        }),
+      ),
+    ).toMatchObject({ kind: "heartbeat", lastTradeId: 1106545022 });
 
     const sub = parseCoinbaseMessage(
       JSON.stringify({
@@ -122,6 +135,9 @@ describe("parseCoinbaseMessage", () => {
     expect(sub).toEqual({ kind: "subscribed", channels: ["ticker", "matches", "level2_50"] });
     expect(hasBookChannel(["ticker", "level2_50"])).toBe(true);
     expect(hasBookChannel(["ticker", "matches"])).toBe(false);
+    expect(hasTradeChannel(["ticker", "matches"])).toBe(true);
+    // Coinbase answers "subscription limit reached" with only the heartbeat channel.
+    expect(hasTradeChannel(["heartbeat"])).toBe(false);
   });
 
   it("reports errors and ignores unknown frames", () => {

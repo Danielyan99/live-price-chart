@@ -28,6 +28,11 @@ export class MinMaxDownsampler {
   private scale = 1;
   private passThrough = false;
 
+  /** True when this pass aggregated points into columns (more points than pixels). */
+  get aggregated(): boolean {
+    return !this.passThrough;
+  }
+
   // Current column: indices (add order) and values of first/min/max/last.
   private col = NaN;
   private firstI = 0;
@@ -99,6 +104,100 @@ export class MinMaxDownsampler {
       this.maxT = time;
       this.maxP = price;
     }
+  }
+
+  /**
+   * Adds points [start, end) straight from typed arrays. Same result as
+   * calling add() for each point, but the loop keeps its state in locals,
+   * which is several times faster for 100k points per frame.
+   */
+  addRange(T: Float64Array, P: Float64Array, start: number, end: number): void {
+    if (this.passThrough) {
+      for (let j = start; j < end; j++) this.add(T[j], P[j]);
+      return;
+    }
+    const xMin = this.xMin;
+    const xMax = this.xMax;
+    const scale = this.scale;
+    let i = this.seen;
+    let inView = this.inView;
+    let vMin = this.min;
+    let vMax = this.max;
+    let col = this.col;
+    let fI = this.firstI;
+    let fT = this.firstT;
+    let fP = this.firstP;
+    let lI = this.lastI;
+    let lT = this.lastT;
+    let lP = this.lastP;
+    let mnI = this.minI;
+    let mnT = this.minT;
+    let mnP = this.minP;
+    let mxI = this.maxI;
+    let mxT = this.maxT;
+    let mxP = this.maxP;
+    for (let j = start; j < end; j++, i++) {
+      const t = T[j];
+      const p = P[j];
+      if (t >= xMin && t <= xMax) {
+        inView++;
+        if (!(p >= vMin)) vMin = p;
+        if (!(p <= vMax)) vMax = p;
+      }
+      const c = Math.floor((t - xMin) * scale);
+      if (c !== col) {
+        if (i > 0) {
+          this.firstI = fI;
+          this.firstT = fT;
+          this.firstP = fP;
+          this.lastI = lI;
+          this.lastT = lT;
+          this.lastP = lP;
+          this.minI = mnI;
+          this.minT = mnT;
+          this.minP = mnP;
+          this.maxI = mxI;
+          this.maxT = mxT;
+          this.maxP = mxP;
+          this.flushColumn();
+        }
+        col = c;
+        fI = lI = mnI = mxI = i;
+        fT = lT = mnT = mxT = t;
+        fP = lP = mnP = mxP = p;
+        continue;
+      }
+      lI = i;
+      lT = t;
+      lP = p;
+      if (p < mnP) {
+        mnI = i;
+        mnT = t;
+        mnP = p;
+      }
+      if (p > mxP) {
+        mxI = i;
+        mxT = t;
+        mxP = p;
+      }
+    }
+    this.seen = i;
+    this.inView = inView;
+    this.min = vMin;
+    this.max = vMax;
+    this.col = col;
+    this.firstI = fI;
+    this.firstT = fT;
+    this.firstP = fP;
+    this.lastI = lI;
+    this.lastT = lT;
+    this.lastP = lP;
+    this.minI = mnI;
+    this.minT = mnT;
+    this.minP = mnP;
+    this.maxI = mxI;
+    this.maxT = mxT;
+    this.maxP = mxP;
   }
 
   /** Finishes the pass; the vertices are in `t`/`p` up to `count`. */

@@ -51,6 +51,19 @@ describe("MarketStore", () => {
     expect(store.points.firstTime).toBe(5);
   });
 
+  it("records where data switches to and from simulated, for the chart bands", () => {
+    const store = new MarketStore();
+    // real 1..2, simulated 3..5, real 6..7
+    store.ingest(batch([1, 1, 1, 0, 2, 1, 1, 0, 3, 1, 1, 2, 4, 1, 1, 2]));
+    store.ingest(batch([5, 1, 1, 2, 6, 1, 1, 0, 7, 1, 1, 0]));
+    expect(store.simSwitches).toEqual([3, 1, 6, 0]);
+    expect(store.simBands(0, 10)).toEqual([3, 6]);
+    expect(store.simBands(4, 10)).toEqual([4, 6]);
+    expect(store.simBands(6, 10)).toEqual([]);
+    store.ingest(batch([8, 1, 1, 2]));
+    expect(store.simBands(0, 9)).toEqual([3, 6, 8, 9]); // open run ends at "to"
+  });
+
   it("records at most one depth snapshot per second and finds them by time", () => {
     const store = new MarketStore();
     for (let t = 0; t <= 5000; t += 250) store.ingest(batch([], { depth: depth(t) }));

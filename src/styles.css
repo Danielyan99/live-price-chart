@@ -135,7 +135,10 @@ h2 {
   }
 }
 
+/* Containment: a text change inside one panel never makes the browser
+   re-layout or repaint the rest of the page. */
 .panel {
+  contain: layout paint;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -394,8 +397,9 @@ select {
 
 /* Trades table: numbers line up on the decimal point. */
 .trades-scroll {
-  max-height: 440px;
+  height: 440px;
   overflow-y: auto;
+  contain: strict;
 }
 
 .trades table {

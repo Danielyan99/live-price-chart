@@ -1,6 +1,7 @@
 import { formatFixed, formatPrice, formatTimeUTC } from "../lib/format.ts";
 import { freshness } from "../lib/staleness.ts";
 import type { DepthSource } from "./depthChart.ts";
+import { setText } from "./dom.ts";
 import type { FrameTask } from "./frameLoop.ts";
 import type { ChartClock } from "./priceChart.ts";
 import type { MarketStore } from "./store.ts";
@@ -11,10 +12,6 @@ export interface StatusModes {
   staleMs(): number;
   /** Replay state, or null when live. */
   replay(): { cursor: number; behindMs: number; playing: boolean; speed: number } | null;
-}
-
-function setText(el: HTMLElement | undefined, text: string): void {
-  if (el && el.textContent !== text) el.textContent = text;
 }
 
 function setData(el: HTMLElement | undefined, key: string, value: string): void {

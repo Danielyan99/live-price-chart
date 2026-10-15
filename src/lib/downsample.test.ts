@@ -87,6 +87,26 @@ describe("MinMaxDownsampler", () => {
     expect(ds.seen).toBe(5);
   });
 
+  it("addRange gives exactly the same output as add(), also across two segments", () => {
+    const { t, p } = randomWalk(30_000, 4);
+    const T = Float64Array.from(t);
+    const P = Float64Array.from(p);
+    for (const columns of [50, 700, 40_000]) {
+      const a = new MinMaxDownsampler();
+      a.begin(1000, 25_000, columns, t.length);
+      for (let i = 0; i < t.length; i++) a.add(t[i], p[i]);
+      a.end();
+      const b = new MinMaxDownsampler();
+      b.begin(1000, 25_000, columns, t.length);
+      b.addRange(T, P, 0, 12_345); // a wrapped ring buffer arrives in two parts
+      b.addRange(T, P, 12_345, t.length);
+      b.end();
+      expect(Array.from(b.t.subarray(0, b.count))).toEqual(Array.from(a.t.subarray(0, a.count)));
+      expect(Array.from(b.p.subarray(0, b.count))).toEqual(Array.from(a.p.subarray(0, a.count)));
+      expect([b.min, b.max, b.inView, b.seen]).toEqual([a.min, a.max, a.inView, a.seen]);
+    }
+  });
+
   it("can be reused across passes without stale state", () => {
     const ds = new MinMaxDownsampler();
     ds.begin(0, 10, 2, 100);

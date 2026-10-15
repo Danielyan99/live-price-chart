@@ -5,6 +5,8 @@ import { niceStep, priceTicks } from "../lib/ticks.ts";
 import { COLORS, FONT, FONT_BOLD, Layer, crisp, pattern } from "./canvas.ts";
 import type { FrameTask } from "./frameLoop.ts";
 
+/** New book snapshots are drawn at most 10 times a second (hover and resize: at once). */
+const MIN_INTERVAL_MS = 100;
 const M_LEFT = 6;
 const M_RIGHT = 62;
 const M_TOP = 28;
@@ -38,6 +40,7 @@ export class DepthChart implements FrameTask {
   private dirty = true;
   private shown: DepthSnapshot | null | undefined = undefined;
   private shownStale = false;
+  private lastDraw = -Infinity;
   private hover: { x: number; y: number } | null = null;
 
   constructor(source: DepthSource) {
@@ -85,13 +88,15 @@ export class DepthChart implements FrameTask {
     this.dirty = true;
   };
 
-  frame(): void {
+  frame(now: number): void {
     if (!this.host) return;
     const dpr = window.devicePixelRatio || 1;
     if (this.layer.resize(Math.max(1, this.cssW), Math.max(1, this.cssH), dpr)) this.dirty = true;
     const d = this.source.depth();
     const stale = this.source.stale();
     if (d === this.shown && stale === this.shownStale && !this.dirty) return;
+    if (!this.dirty && now - this.lastDraw < MIN_INTERVAL_MS) return;
+    this.lastDraw = now;
     this.shown = d;
     this.shownStale = stale;
     this.dirty = false;

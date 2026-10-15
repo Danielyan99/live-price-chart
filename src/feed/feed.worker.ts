@@ -11,6 +11,7 @@ import {
   COINBASE_WS_URL,
   PRODUCT_ID,
   hasBookChannel,
+  hasTradeChannel,
   parseCoinbaseMessage,
   parseRestTrade,
   subscribeMessage,
@@ -83,6 +84,8 @@ class FeedController {
   private connectTimer: ReturnType<typeof setTimeout> | undefined;
   private reconnects = 0;
   private lastError: string | null = null;
+  /** Error reasons received since the last subscribe (e.g. a refused channel). */
+  private subscribeErrors: string[] = [];
 
   // History backfill. Live trades are shown at once and also recorded while
   // history loads; then the chart is rebuilt as history + those live trades.
@@ -216,6 +219,7 @@ class FeedController {
     ws.onopen = () => {
       this.socket = "open";
       this.lastSocketMsgAt = Date.now();
+      this.subscribeErrors = [];
       ws.send(subscribeMessage());
     };
     ws.onmessage = (ev: MessageEvent<string>) => this.onSocketMessage(ev.data);
@@ -272,18 +276,25 @@ class FeedController {
     this.bytes += data.length;
     const event = parseCoinbaseMessage(data);
     if (event) this.onLiveEvent(event, now);
-    if (this.source === "live") this.dataAsOf = now;
     this.busyMs += performance.now() - t0;
   }
 
   private onLiveEvent(e: FeedEvent, now: number): void {
     switch (e.kind) {
       case "subscribed":
+        // Coinbase can refuse channels (for example "subscription limit
+        // reached") and still confirm the rest. Without trades, live is down.
+        if (!hasTradeChannel(e.channels)) {
+          const why = this.subscribeErrors.join("; ") || "trade channel not confirmed";
+          this.dropSocket(`Coinbase refused the trade feed: ${why}`);
+          return;
+        }
         this.subscribed = true;
         this.liveHasBook = hasBookChannel(e.channels);
         this.liveReadyCheck();
         break;
       case "book-snapshot":
+        this.markFresh(now);
         this.liveBook.bids.load(e.bids);
         this.liveBook.asks.load(e.asks);
         this.liveBookReady = true;
@@ -291,11 +302,13 @@ class FeedController {
         this.liveReadyCheck();
         break;
       case "book-update":
+        this.markFresh(now);
         for (const c of e.changes)
           (c.bid ? this.liveBook.bids : this.liveBook.asks).set(c.price, c.size);
         this.bookDirty = true;
         break;
       case "ticker":
+        this.markFresh(now);
         this.observeClock(e.time, now);
         this.ticker = {
           open24h: e.open24h,
@@ -306,8 +319,12 @@ class FeedController {
         break;
       case "heartbeat":
         this.observeClock(e.time, now);
+        // A heartbeat proves we are up to date only if we already have the
+        // trade it names. Otherwise trades are missing and the age must grow.
+        if (e.lastTradeId <= this.lastTradeId) this.markFresh(now);
         break;
       case "trade":
+        this.markFresh(now);
         this.observeClock(e.time, now);
         // last_match repeats a trade we may already have after a reconnect.
         if (e.id <= this.lastTradeId) return;
@@ -320,8 +337,14 @@ class FeedController {
         break;
       case "error":
         this.lastError = e.message;
+        this.subscribeErrors.push(e.message);
         break;
     }
+  }
+
+  /** Live market data arrived at `now` (local time). */
+  private markFresh(now: number): void {
+    if (this.source === "live") this.dataAsOf = now;
   }
 
   private liveReadyCheck(): void {
