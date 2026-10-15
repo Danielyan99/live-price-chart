@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BookSide, OrderBook, depthCurve } from "./orderBook.ts";
+import { BookSide, OrderBook, cumulativeAt, depthCurve } from "./orderBook.ts";
 import { Rng } from "./rng.ts";
 
 describe("BookSide", () => {
@@ -131,5 +131,25 @@ describe("depthCurve", () => {
   it("is empty for an empty side", () => {
     const c = depthCurve(new BookSide(true), 90, 10);
     expect(c.prices.length).toBe(0);
+  });
+});
+
+describe("cumulativeAt", () => {
+  const bidPx = new Float64Array([100, 99, 98]);
+  const bidCum = new Float64Array([1, 3, 6]);
+  const askPx = new Float64Array([101, 102, 103]);
+  const askCum = new Float64Array([2, 4, 9]);
+
+  it("sums bids at or above the price", () => {
+    expect(cumulativeAt(bidPx, bidCum, 100.5, true)).toBe(0); // above the best bid
+    expect(cumulativeAt(bidPx, bidCum, 100, true)).toBe(1);
+    expect(cumulativeAt(bidPx, bidCum, 98.5, true)).toBe(3);
+    expect(cumulativeAt(bidPx, bidCum, 50, true)).toBe(6);
+  });
+
+  it("sums asks at or below the price", () => {
+    expect(cumulativeAt(askPx, askCum, 100.9, false)).toBe(0);
+    expect(cumulativeAt(askPx, askCum, 102, false)).toBe(4);
+    expect(cumulativeAt(askPx, askCum, 200, false)).toBe(9);
   });
 });

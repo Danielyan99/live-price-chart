@@ -1,5 +1,5 @@
 import type { SourcePref } from "../feed/protocol.ts";
-import { engine } from "../engine/engine.ts";
+import { STALE_CHOICES, engine } from "../engine/engine.ts";
 import { useObservable } from "../engine/observable.ts";
 
 const SOURCES: Array<{ pref: SourcePref; label: string; title: string }> = [
@@ -10,6 +10,7 @@ const SOURCES: Array<{ pref: SourcePref; label: string; title: string }> = [
 
 export function FeedControls() {
   const feed = useObservable(engine.feed);
+  const settings = useObservable(engine.settings);
   return (
     <section className="panel controls" aria-labelledby="controls-title">
       <h2 id="controls-title">Feed &amp; tests</h2>
@@ -68,6 +69,23 @@ export function FeedControls() {
             Drop socket
           </button>
         </div>
+      </div>
+      <div className="control-row">
+        <label className="label" htmlFor="stale-after">
+          Stale after
+        </label>
+        <select
+          id="stale-after"
+          value={settings.staleMs}
+          onChange={(e) => engine.setStaleMs(Number(e.target.value))}
+        >
+          {STALE_CHOICES.map((ms) => (
+            <option key={ms} value={ms}>
+              {ms < 1000 ? `${ms} ms` : `${ms / 1000} s`}
+            </option>
+          ))}
+        </select>
+        <span className="muted small">without any new message, data is marked stale</span>
       </div>
     </section>
   );

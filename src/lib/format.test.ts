@@ -97,7 +97,7 @@ describe("formatDuration", () => {
   it("picks a readable unit", () => {
     expect(formatDuration(850)).toBe("850 ms");
     expect(formatDuration(1249)).toBe("1.2 s");
-    expect(formatDuration(1299)).toBe("1.2 s"); // truncated: never younger than it is
+    expect(formatDuration(1299)).toBe("1.2 s"); // truncated, like a clock
     expect(formatDuration(12_400)).toBe("12 s");
     expect(formatDuration(185_000)).toBe("3 min 05 s");
     expect(formatDuration(3_720_000)).toBe("1 h 02 min");

@@ -276,3 +276,190 @@ button:disabled {
 [data-state="warn"] {
   color: var(--sim);
 }
+
+/* Header quote */
+.quote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 14px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.quote-price {
+  font-size: 22px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.quote-price .unit {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.quote[data-dir="up"] .arrow,
+[data-dir="up"].quote-change {
+  color: var(--up);
+}
+
+.quote[data-dir="down"] .arrow,
+[data-dir="down"].quote-change {
+  color: var(--down);
+}
+
+.quote-change,
+.quote-book,
+.quote-asof {
+  font-size: 12px;
+}
+
+/* Old data is never shown as current: dimmed, struck through, labelled. */
+.quote[data-stale="true"] .quote-price {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.quote[data-stale="true"] .quote-change {
+  opacity: 0.5;
+}
+
+.quote[data-stale="true"] .quote-asof {
+  color: var(--sim);
+  font-weight: 600;
+}
+
+.freshness[data-kind="fresh"] {
+  color: var(--up);
+}
+
+.freshness[data-kind="stale"] {
+  color: #0b0f14;
+  background: var(--sim);
+  border-color: var(--sim);
+}
+
+.freshness[data-kind="none"] {
+  color: var(--muted);
+}
+
+.freshness[data-kind="replay"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  border-style: dashed;
+}
+
+.freshness span:last-child {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Second row under the chart */
+.row-2 {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 12px;
+  align-items: start;
+}
+
+@media (max-width: 1200px) {
+  .row-2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.depth-host {
+  position: relative;
+  height: 240px;
+}
+
+.depth-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+select {
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: #1a2330;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 3px 6px;
+}
+
+/* Trades table: numbers line up on the decimal point. */
+.trades-scroll {
+  max-height: 440px;
+  overflow-y: auto;
+}
+
+.trades table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 12px;
+  contain: content;
+}
+
+.trades th {
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  color: var(--muted);
+  font-weight: 500;
+  text-align: left;
+  padding: 2px 4px 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.trades td {
+  padding: 1px 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.trades th:nth-child(1) {
+  width: 31%;
+}
+
+.trades th:nth-child(2) {
+  width: 17%;
+}
+
+.trades .num {
+  text-align: right;
+}
+
+.trades tr[data-side="buy"] .t-side {
+  color: var(--up);
+}
+
+.trades tr[data-side="sell"] .t-side {
+  color: var(--down);
+}
+
+/* Simulated rows: a texture, not just a colour. */
+.trades tr[data-sim] {
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent 0 5px,
+    rgba(242, 184, 75, 0.09) 5px 7px
+  );
+}
+
+.t-size .dec {
+  display: inline-block;
+  min-width: 9ch;
+  text-align: left;
+}
+
+.t-size .pad {
+  color: #4c5866;
+}

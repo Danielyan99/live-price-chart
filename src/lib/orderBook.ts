@@ -167,3 +167,25 @@ export function depthCurve(side: BookSide, limitPrice: number, maxPoints: number
   }
   return { prices: px.slice(0, out), cumulative: cum.slice(0, out) };
 }
+
+/**
+ * Cumulative size available at `price` from a depth curve: for bids, the
+ * total of all levels at or above the price; for asks, at or below it.
+ */
+export function cumulativeAt(
+  prices: Float64Array,
+  cum: Float64Array,
+  price: number,
+  isBid: boolean,
+): number {
+  // Last index whose price is still "inside" (>= price for bids, <= for asks).
+  let lo = 0;
+  let hi = prices.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    const inside = isBid ? prices[mid] >= price : prices[mid] <= price;
+    if (inside) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo === 0 ? 0 : cum[lo - 1];
+}
