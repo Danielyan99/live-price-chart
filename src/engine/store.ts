@@ -25,6 +25,8 @@ export class MarketStore {
   status: FeedStatus | null = null;
 
   pointsVersion = 0;
+  /** Bumped when the points are replaced (prefill), so views drop caches. */
+  resets = 0;
   depthVersion = 0;
   statusVersion = 0;
 
@@ -37,6 +39,7 @@ export class MarketStore {
   ingest(msg: BatchMessage): void {
     const t0 = performance.now();
     if (msg.reset) {
+      this.resets++;
       this.points.clear();
       this.depthHistory.length = 0;
     }

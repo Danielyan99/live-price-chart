@@ -32,7 +32,7 @@ import type {
 import { DEFAULT_SIM_CONFIG, MarketSimulator } from "./simulator.ts";
 
 const BATCH_MS = 50;
-const CONNECT_TIMEOUT_MS = 6000;
+const CONNECT_TIMEOUT_MS = 8000;
 /** An open socket that sends nothing for this long is treated as dead. */
 const SILENT_SOCKET_MS = 5000;
 const FIRST_RETRY_MS = 2000;
@@ -80,12 +80,13 @@ class FeedController {
   private reconnects = 0;
   private lastError: string | null = null;
 
-  // History backfill: live trades are held back until history is in place.
+  // History backfill. Live trades are shown at once and also recorded while
+  // history loads; then the chart is rebuilt as history + those live trades.
   private backfill: BackfillState = "idle";
   private backfillCount = 0;
-  private holdLive = false;
-  private heldLive: TradeEvent[] = [];
-  private everEmitted = false;
+  private recordLive = false;
+  private liveDuringHistory: TradeEvent[] = [];
+  private simEmitted = false;
 
   // Simulated feed (also used for the book when live has no book channel).
   private sim: MarketSimulator | null = null;
@@ -155,8 +156,9 @@ class FeedController {
 
   // ---- Source selection -------------------------------------------------
 
+  /** Trades can flow once subscribed; the book follows when its snapshot arrives. */
   private liveReady(): boolean {
-    return this.socket === "open" && this.subscribed && (this.liveBookReady || !this.liveHasBook);
+    return this.socket === "open" && this.subscribed;
   }
 
   private pickSource(): ActiveSource {
@@ -307,8 +309,10 @@ class FeedController {
         if (e.id <= this.lastTradeId) return;
         this.lastTradeId = e.id;
         this.lastLivePrice = e.price;
-        if (this.holdLive) this.heldLive.push(e);
-        else if (this.source === "live") this.emitTrade(e, false);
+        if (this.source === "live") {
+          this.emitTrade(e, false);
+          if (this.recordLive) this.liveDuringHistory.push(e);
+        }
         break;
       case "error":
         this.lastError = e.message;
@@ -346,7 +350,7 @@ class FeedController {
       return;
     }
     this.backfill = "loading";
-    this.holdLive = true;
+    this.recordLive = true;
     const abort = new AbortController();
     const timer = setTimeout(() => abort.abort(), BACKFILL_TIMEOUT_MS);
     try {
@@ -362,22 +366,28 @@ class FeedController {
         if (!after || rows.length === 0) break;
         await sleep(120); // stay well under the public rate limit
       }
-      // If the chart already shows other data (e.g. the simulator took over),
-      // older trades cannot go in front of it without breaking time order.
-      if (this.everEmitted || this.source === "sim") {
+      // Simulated points already in the chart cannot be mixed with real
+      // history (and older trades cannot go in front of them): skip.
+      if (this.simEmitted) {
         this.backfill = "skipped";
         return;
       }
       trades.sort((a, b) => a.id - b.id);
-      const firstHeld = this.heldLive.length > 0 ? this.heldLive[0].id : Infinity;
+      const live = this.liveDuringHistory;
+      const firstLive = live.length > 0 ? live[0].id : Infinity;
+      // One reset batch: history first, then the live trades shown so far.
+      this.pending.length = 0;
+      this.reset = true;
+      this.lastEmittedTime = -Infinity;
       let added = 0;
       for (const t of trades) {
-        if (t.id >= firstHeld) break;
-        this.emitTrade(t, false);
+        if (t.id >= firstLive) break;
+        this.emitTrade(t, false, false);
         added++;
         if (t.id > this.lastTradeId) this.lastTradeId = t.id;
-        this.lastLivePrice = t.price;
+        if (live.length === 0) this.lastLivePrice = t.price;
       }
+      for (const t of live) this.emitTrade(t, false, false);
       this.backfill = "done";
       this.backfillCount = added;
     } catch (err) {
@@ -385,10 +395,8 @@ class FeedController {
       this.lastError = `History: ${err instanceof Error ? err.message : String(err)}`;
     } finally {
       clearTimeout(timer);
-      this.holdLive = false;
-      const held = this.heldLive;
-      this.heldLive = [];
-      if (this.source === "live") for (const t of held) this.emitTrade(t, false);
+      this.recordLive = false;
+      this.liveDuringHistory = [];
     }
   }
 
@@ -430,7 +438,7 @@ class FeedController {
     this.lastEmittedTime = time;
     const flags = (e.takerBuy ? FLAG_BUY : 0) | (simulated ? FLAG_SIM : 0);
     this.pending.push(time, e.price, e.size, flags);
-    this.everEmitted = true;
+    if (simulated) this.simEmitted = true;
     if (count) this.trades++;
   }
 

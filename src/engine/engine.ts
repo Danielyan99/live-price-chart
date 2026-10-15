@@ -1,12 +1,15 @@
 import type {
+  ActiveSource,
   BackfillState,
   FromWorker,
   SocketState,
   SourcePref,
   ToWorker,
 } from "../feed/protocol.ts";
-import type { ActiveSource } from "../feed/protocol.ts";
+import { FrameLoop } from "./frameLoop.ts";
 import { Observable } from "./observable.ts";
+import { PerfPanel } from "./perfPanel.ts";
+import { PriceChart, type ChartClock } from "./priceChart.ts";
 import { MarketStore } from "./store.ts";
 
 /** Feed state that React shows. Changes a few times per session, not per tick. */
@@ -24,11 +27,14 @@ export interface FeedUi {
 }
 
 /**
- * Owns the feed worker and the market store. Created once, outside React,
- * so StrictMode double mounts and re-renders never restart the feed.
+ * Owns the feed worker, the market store, the frame loop and the canvas
+ * views. Created once, outside React, so StrictMode double mounts and
+ * re-renders never restart the feed. React components only mount DOM nodes
+ * into it and call its commands.
  */
 export class Engine {
   readonly store = new MarketStore();
+  readonly loop = new FrameLoop();
   readonly feed = new Observable<FeedUi>({
     pref: "auto",
     source: "none",
@@ -44,6 +50,19 @@ export class Engine {
   /** Local time until which a requested stall lasts (for the UI note). */
   stallUntil = 0;
 
+  /** Live clock: exchange time is local time plus the measured offset. */
+  readonly clock: ChartClock = {
+    head: () => Date.now() + (this.store.status?.clockOffset ?? 0),
+    knownUntil: () => {
+      const s = this.store.status;
+      return s ? s.dataAsOf + s.clockOffset : -Infinity;
+    },
+    limit: () => Infinity,
+  };
+
+  readonly chart = new PriceChart(this.store, this.clock);
+  readonly perfPanel = new PerfPanel(this.loop, this.store, this.chart);
+
   private readonly worker: Worker;
 
   constructor() {
@@ -52,9 +71,13 @@ export class Engine {
       name: "feed",
     });
     this.worker.onmessage = (ev: MessageEvent<FromWorker>) => this.onBatch(ev.data);
+    this.loop.add(this.chart);
+    this.loop.add(this.perfPanel);
+    this.loop.start();
   }
 
   private onBatch(msg: FromWorker): void {
+    // Data only lands in the store; drawing happens in the next frame.
     this.store.ingest(msg);
     const s = msg.status;
     this.feed.set({
