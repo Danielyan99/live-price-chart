@@ -24,6 +24,7 @@ function batch(points: number[], extra: Partial<BatchMessage> = {}): BatchMessag
     type: "batch",
     reset: false,
     points: new Float64Array(points),
+    depthChanged: extra.depth !== undefined,
     depth: null,
     status,
     ...extra,
@@ -49,6 +50,15 @@ describe("MarketStore", () => {
     store.ingest(batch([5, 5, 5, 0], { reset: true }));
     expect(store.points.length).toBe(1);
     expect(store.points.firstTime).toBe(5);
+  });
+
+  it("keeps the book when it did not change, clears it when it changed to none", () => {
+    const store = new MarketStore();
+    store.ingest(batch([], { depth: depth(1000) }));
+    store.ingest(batch([])); // book unchanged
+    expect(store.depth?.time).toBe(1000);
+    store.ingest(batch([], { depthChanged: true, depth: null })); // e.g. switched source
+    expect(store.depth).toBeNull();
   });
 
   it("records where data switches to and from simulated, for the chart bands", () => {

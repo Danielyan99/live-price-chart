@@ -527,7 +527,8 @@ class FeedController {
     // A simulated stall: keep collecting, deliver nothing.
     if (Date.now() < this.stallUntil) return;
 
-    const depth = this.bookDirty ? this.buildDepth() : null;
+    const depthChanged = this.bookDirty;
+    const depth = depthChanged ? this.buildDepth() : null;
     this.bookDirty = false;
     const points = new Float64Array(this.pending);
     this.pending.length = 0;
@@ -535,6 +536,7 @@ class FeedController {
       type: "batch",
       reset: this.reset,
       points,
+      depthChanged,
       depth,
       status: this.status(),
     };

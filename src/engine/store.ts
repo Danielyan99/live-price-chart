@@ -69,10 +69,12 @@ export class MarketStore {
     while (drop + 2 < sw.length && sw[drop + 2] <= ring.firstTime) drop += 2;
     if (drop > 0) sw.splice(0, drop);
     if (p.length > 0 || msg.reset) this.pointsVersion++;
-    if (msg.depth) {
+    // A changed book with no snapshot (source switched, live book not in
+    // yet) clears the old one: never keep showing a book from another source.
+    if (msg.depthChanged && msg.depth !== this.depth) {
       this.depth = msg.depth;
       this.depthVersion++;
-      this.recordDepth(msg.depth);
+      if (msg.depth) this.recordDepth(msg.depth);
     }
     this.status = msg.status;
     this.statusVersion++;

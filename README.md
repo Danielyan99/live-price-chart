@@ -162,7 +162,7 @@ zoom, tap for the crosshair.
 ```bash
 npm install
 npm run dev           # http://localhost:5173
-npm test              # 86 unit tests (Vitest)
+npm test              # 87 unit tests (Vitest)
 npm run typecheck     # TypeScript strict
 npm run lint          # oxlint
 npm run measure       # performance table above (needs Google Chrome installed)
@@ -171,7 +171,7 @@ npm run screenshots   # images in docs/
 
 ## Tests
 
-86 unit tests in 11 files, for the logic the screen depends on:
+87 unit tests in 11 files, for the logic the screen depends on:
 
 - `ringBuffer` – wrap-around, size limit, flat memory, binary search across the wrap
 - `format` – decimal rounding, minus sign, decimal-point alignment, UTC time, durations

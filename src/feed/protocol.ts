@@ -75,6 +75,9 @@ export interface BatchMessage {
   reset: boolean;
   /** POINT_STRIDE numbers per point, oldest first. */
   points: Float64Array;
+  /** True when the book changed since the last batch; then `depth` replaces the old one. */
+  depthChanged: boolean;
+  /** New depth, or null when no trustworthy book is available (yet). */
   depth: DepthSnapshot | null;
   status: FeedStatus;
 }
