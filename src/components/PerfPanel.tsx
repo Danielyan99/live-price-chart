@@ -1,9 +1,36 @@
-import { engine } from "../engine/engine.ts";
+import { engine, type MeasureReport } from "../engine/engine.ts";
+import { useObservable } from "../engine/observable.ts";
+import { formatCount, formatFixed } from "../lib/format.ts";
 import { useMount } from "./useMount.ts";
+
+function Report({ r }: { r: MeasureReport }) {
+  const what = r.replay
+    ? "replay"
+    : r.source === "sim"
+      ? r.stress
+        ? "simulated feed, stress 10×"
+        : "simulated feed"
+      : "live feed";
+  return (
+    <div className="report" aria-live="polite">
+      <p className="small">
+        <strong>
+          {r.seconds} s, {what}:
+        </strong>{" "}
+        {formatFixed(r.fps, 0)} FPS · draw avg {formatFixed(r.avg, 2)} ms · p95{" "}
+        {formatFixed(r.p95, 2)} ms · p99 {formatFixed(r.p99, 2)} ms · max {formatFixed(r.max, 1)} ms
+        · {r.overBudget} of {formatCount(r.frames)} frames over budget · {r.slowFrames} slow frames
+        · {formatCount(r.pointsInView)} points in view → {formatCount(r.verticesDrawn)} vertices ·{" "}
+        {formatCount(r.msgsPerSec)} msg/s
+      </p>
+    </div>
+  );
+}
 
 /** Static skeleton; the engine writes the numbers (no React render per frame). */
 export function PerfPanel() {
   const ref = useMount<HTMLElement>(engine.perfPanel);
+  const m = useObservable(engine.measurement);
   return (
     <section className="panel perf" ref={ref} aria-labelledby="perf-title">
       <div className="panel-head">
@@ -50,6 +77,13 @@ export function PerfPanel() {
       <p className="muted small">
         Per layer, ms/frame: <span data-perf="tasks">{"—"}</span>
       </p>
+      <div className="measure">
+        <button type="button" disabled={m.running} onClick={() => void engine.measure(10)}>
+          {m.running ? "Measuring… (10 s)" : "Measure 10 s"}
+        </button>
+        <span className="muted small">records every frame, then summarises</span>
+      </div>
+      {m.report && <Report r={m.report} />}
     </section>
   );
 }

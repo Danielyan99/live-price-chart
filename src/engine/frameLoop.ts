@@ -18,6 +18,18 @@ export class FrameLoop {
   readonly taskMs = new Map<string, number>();
   private readonly tasks: FrameTask[] = [];
   private running = false;
+  private sink: { draw: number[]; interval: number[]; lastTs: number } | null = null;
+
+  /** Starts recording every frame's draw time and interval (for a measurement run). */
+  startMeasure(): void {
+    this.sink = { draw: [], interval: [], lastTs: NaN };
+  }
+
+  stopMeasure(): { draw: number[]; interval: number[] } {
+    const sink = this.sink ?? { draw: [], interval: [] };
+    this.sink = null;
+    return sink;
+  }
 
   add(task: FrameTask): void {
     if (!this.tasks.includes(task)) this.tasks.push(task);
@@ -40,6 +52,12 @@ export class FrameLoop {
       t = end;
     }
     this.perf.record(timestamp, t - start);
+    const sink = this.sink;
+    if (sink) {
+      sink.draw.push(t - start);
+      if (!Number.isNaN(sink.lastTs)) sink.interval.push(timestamp - sink.lastTs);
+      sink.lastTs = timestamp;
+    }
     requestAnimationFrame(this.tick);
   };
 }

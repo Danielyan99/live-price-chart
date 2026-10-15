@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FRAME_BUDGET_MS, PerfStats } from "./perfStats.ts";
+import { FRAME_BUDGET_MS, PerfStats, summarizeRun } from "./perfStats.ts";
 
 describe("PerfStats", () => {
   it("computes FPS from frame intervals", () => {
@@ -39,5 +39,25 @@ describe("PerfStats", () => {
     s.record((t += FRAME_BUDGET_MS * 3), 1); // two frames missed
     s.record((t += FRAME_BUDGET_MS), 1);
     expect(s.droppedFrames()).toBe(2);
+  });
+});
+
+describe("summarizeRun", () => {
+  it("summarises a measurement run", () => {
+    const draw = Array.from({ length: 600 }, (_, i) => (i < 590 ? 2 : 20));
+    const interval = Array.from({ length: 599 }, (_, i) => (i === 10 ? 50 : 1000 / 60));
+    const r = summarizeRun(draw, interval, 10_000);
+    expect(r.frames).toBe(600);
+    expect(r.fps).toBe(60);
+    expect(r.p95).toBe(2);
+    expect(r.p99).toBe(20);
+    expect(r.max).toBe(20);
+    expect(r.overBudget).toBe(10);
+    expect(r.slowFrames).toBe(1);
+    expect(r.avg).toBeCloseTo((590 * 2 + 10 * 20) / 600, 9);
+  });
+
+  it("is all zeros for an empty run", () => {
+    expect(summarizeRun([], [], 1000).frames).toBe(0);
   });
 });

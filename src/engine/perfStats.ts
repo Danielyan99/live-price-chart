@@ -98,3 +98,47 @@ export class PerfStats {
     return { frames: n, avg: sum / n, p95, max, overBudget: over };
   }
 }
+
+export interface FrameRunSummary {
+  frames: number;
+  fps: number;
+  avg: number;
+  p95: number;
+  p99: number;
+  max: number;
+  /** Frames whose draw time alone was over the 16.7 ms budget. */
+  overBudget: number;
+  /** Frame intervals over 33.4 ms: at least one 60 Hz frame was missed. */
+  slowFrames: number;
+}
+
+/** Summary of a measurement run: per-frame draw times and frame intervals. */
+export function summarizeRun(
+  draw: readonly number[],
+  interval: readonly number[],
+  elapsedMs: number,
+): FrameRunSummary {
+  const n = draw.length;
+  if (n === 0)
+    return { frames: 0, fps: 0, avg: 0, p95: 0, p99: 0, max: 0, overBudget: 0, slowFrames: 0 };
+  const sorted = Float64Array.from(draw).sort();
+  const pick = (q: number) => sorted[Math.min(n - 1, Math.ceil(n * q) - 1)];
+  let sum = 0;
+  let over = 0;
+  for (const d of draw) {
+    sum += d;
+    if (d > FRAME_BUDGET_MS) over++;
+  }
+  let slow = 0;
+  for (const iv of interval) if (iv > 2 * FRAME_BUDGET_MS) slow++;
+  return {
+    frames: n,
+    fps: (n * 1000) / elapsedMs,
+    avg: sum / n,
+    p95: pick(0.95),
+    p99: pick(0.99),
+    max: sorted[n - 1],
+    overBudget: over,
+    slowFrames: slow,
+  };
+}

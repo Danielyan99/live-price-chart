@@ -33,8 +33,12 @@ import { DEFAULT_SIM_CONFIG, MarketSimulator } from "./simulator.ts";
 
 const BATCH_MS = 50;
 const CONNECT_TIMEOUT_MS = 8000;
-/** An open socket that sends nothing for this long is treated as dead. */
-const SILENT_SOCKET_MS = 5000;
+/**
+ * An open socket that sends nothing for this long is treated as dead. The
+ * real feed often pauses 1-3 s (heartbeats included), so this is set well
+ * above that; the stale badge shows the shorter pauses.
+ */
+const SILENT_SOCKET_MS = 8000;
 const FIRST_RETRY_MS = 2000;
 const MAX_RETRY_MS = 30_000;
 const BACKFILL_PAGES = 10;

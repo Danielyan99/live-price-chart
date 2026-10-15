@@ -15,6 +15,8 @@ export interface DepthSource {
   depth(): DepthSnapshot | null;
   /** True when showing recorded data (replay). */
   recorded(): boolean;
+  /** Time of the oldest recorded book snapshot, or null. */
+  recordedSince(): number | null;
   /** True when the live data is too old to call current. */
   stale(): boolean;
 }
@@ -109,7 +111,20 @@ export class DepthChart implements FrameTask {
       ctx.fillStyle = COLORS.axisText;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText("Waiting for the order book…", w / 2, h / 2);
+      if (this.source.recorded()) {
+        // Trades go back further (REST history) than the recorded book.
+        const since = this.source.recordedSince();
+        ctx.fillText("No order book recorded for this time.", w / 2, h / 2 - 9);
+        if (since !== null) {
+          ctx.fillText(
+            `Book recording starts at ${formatTimeUTC(since, "s")} UTC.`,
+            w / 2,
+            h / 2 + 9,
+          );
+        }
+      } else {
+        ctx.fillText("Waiting for the order book…", w / 2, h / 2);
+      }
       return;
     }
 
